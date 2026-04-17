@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const DEFAULT_ROW_COUNT = 30;
+const DEFAULT_ROW_COUNT = 32;
 const STORAGE_KEYS = {
   currentDate: "tieStall.currentDate",
   sheetsByDate: "tieStall.sheetsByDate",
@@ -16,11 +16,25 @@ const GOOGLE_DRIVE_CONFIG = {
 };
 
 function createDefaultRows() {
+  const cows = [
+    "5849", "4023", "57402", "5844", "6009", "5950", "3041", "3074", "5992", "2737",
+    "5982", "2804", "5981", "3061", "3085", "3062", "2835", "2780", "5850", "3010",
+    "3068", "5997", "6034", "6044", "5848", "2948", "3472", "2539", "5463", "2451",
+    "5864", "5929",
+  ];
+
+  const binWeights = [
+    "63", "65", "62", "63", "64", "63", "60", "65", "59", "61",
+    "60", "60", "61", "62", "60", "91", "66", "73", "67", "70",
+    "72", "60", "69", "67", "73", "67", "62", "62", "63", "62",
+    "61", "",
+  ];
+
   return Array.from({ length: DEFAULT_ROW_COUNT }, (_, i) => ({
     stall: String(i + 1),
-    cow: "",
+    cow: cows[i] || "",
     diet: "",
-    binWeight: i === 0 ? "11.2" : "",
+    binWeight: binWeights[i] || "",
     binFedYesterday: "",
     fedYesterday: "",
     ortsBinToday: "",
@@ -75,8 +89,22 @@ function recalcRow(row) {
   };
 }
 
+function applyDefaultSetup(rows) {
+  const defaults = createDefaultRows();
+  return defaults.map((defaultRow, i) => {
+    const existingRow = rows[i] || {};
+    return {
+      ...defaultRow,
+      ...existingRow,
+      stall: defaultRow.stall,
+      cow: defaultRow.cow,
+      binWeight: defaultRow.binWeight,
+    };
+  });
+}
+
 function normalizeRows(rows) {
-  return rows.map(recalcRow);
+  return applyDefaultSetup(rows).map(recalcRow);
 }
 
 function getDayInfo(dateString) {
@@ -152,35 +180,23 @@ function sanitizeImportedState(payload) {
   };
 }
 
-function downloadCsv(rows, date, dayOfWeek) {
-  const header1 = ["26KH1 Tie Stall", "", "", "", "", "", "", "", `Date: ${date}`, ""];
-  const header2 = ["", "", "", "", "", "", "", "", `Day of the Week: ${dayOfWeek}`, ""];
-  const header3 = [
-    "Stall",
-    "Cow",
-    "Diet",
-    "Bin Weight (lbs)",
-    "Bin + Fed Yesterday (lbs)",
-    "Fed (Lbs)",
-    "Orts + Bin",
-    "Orts",
-    "Fed + Bin",
-    "Fed",
-  ];
-  const header4 = ["", "", "", "Constant", "Yesterday", "Yesterday", "Today", "Today", "Today", "Today"];
-
-  const body = rows.map((r) => [
+function buildExportRows(rows) {
+  return rows.map((r) => [
     r.stall,
     r.cow,
     r.diet,
-    r.binWeight,
-    r.binFedYesterday,
     r.fedYesterday,
-    r.ortsBinToday,
     r.ortsToday,
-    r.fedBinToday,
     r.fedToday,
   ]);
+}
+
+function downloadCsv(rows, date, dayOfWeek) {
+  const header1 = ["26KH1 Tie Stall", "", "", "", `Date: ${date}`, ""];
+  const header2 = ["", "", "", "", `Day of the Week: ${dayOfWeek}`, ""];
+  const header3 = ["Stall", "Cow", "Diet", "Fed (lbs)", "Orts", "Fed"];
+  const header4 = ["", "", "", "Yesterday", "Today", "Today"];
+  const body = buildExportRows(rows);
 
   const csv = [header1, header2, header3, header4, ...body]
     .map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(","))
@@ -220,7 +236,11 @@ async function loadGoogleIdentityServices() {
     const existing = document.querySelector('script[data-google-identity="true"]');
     if (existing) {
       existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Failed to load Google Identity Services.")), { once: true });
+      existing.addEventListener(
+        "error",
+        () => reject(new Error("Failed to load Google Identity Services.")),
+        { once: true }
+      );
       return;
     }
 
@@ -345,6 +365,71 @@ async function downloadJsonFromGoogleDrive(accessToken, fileId) {
   return response.json();
 }
 
+function runSelfChecks() {
+  const checks = [];
+
+  const defaultRows = createDefaultRows();
+  checks.push({
+    name: "32 default stalls",
+    pass: defaultRows.length === 32,
+  });
+  checks.push({
+    name: "stall 31 prefill",
+    pass: defaultRows[30].cow === "5864" && defaultRows[30].binWeight === "61",
+  });
+  checks.push({
+    name: "stall 32 prefill",
+    pass: defaultRows[31].cow === "5929" && defaultRows[31].binWeight === "",
+  });
+
+  const sample = recalcRow({
+    stall: "1",
+    cow: "123",
+    diet: "A",
+    binWeight: "11.2",
+    binFedYesterday: "135",
+    fedYesterday: "",
+    ortsBinToday: "18.8",
+    ortsToday: "",
+    fedBinToday: "",
+    fedToday: "",
+  });
+
+  checks.push({
+    name: "calculation example",
+    pass:
+      sample.fedYesterday === "123.8" &&
+      sample.ortsToday === "7.6" &&
+      sample.fedBinToday === "140" &&
+      sample.fedToday === "128.8",
+  });
+
+  const mergedRows = normalizeRows([{ stall: "1", cow: "", binWeight: "" }]);
+  checks.push({
+    name: "default setup merge",
+    pass: mergedRows[0].cow === "5849" && mergedRows[0].binWeight === "63",
+  });
+
+  const overriddenRows = normalizeRows([{ stall: "1", cow: "9999", binWeight: "11.2" }]);
+  checks.push({
+    name: "setup overrides old values",
+    pass: overriddenRows[0].cow === "5849" && overriddenRows[0].binWeight === "63",
+  });
+
+  const exportRow = buildExportRows([sample])[0];
+  checks.push({
+    name: "export columns",
+    pass:
+      exportRow.length === 6 &&
+      exportRow[0] === "1" &&
+      exportRow[3] === "123.8" &&
+      exportRow[4] === "7.6" &&
+      exportRow[5] === "128.8",
+  });
+
+  return checks;
+}
+
 export default function App() {
   const todayInfo = getDayInfo(new Date().toISOString().slice(0, 10));
   const fileInputRef = useRef(null);
@@ -370,14 +455,23 @@ export default function App() {
   const [sheetsByDate, setSheetsByDate] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.sheetsByDate);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Object.fromEntries(
+          Object.entries(parsed).map(([date, sheet]) => [
+            date,
+            {
+              rows: normalizeRows(Array.isArray(sheet?.rows) ? sheet.rows : createDefaultRows()),
+              dayOfWeek:
+                typeof sheet?.dayOfWeek === "string"
+                  ? sheet.dayOfWeek
+                  : getDayInfo(date).dayOfWeek,
+            },
+          ])
+        );
+      }
     } catch {
-      return {
-        [todayInfo.date]: {
-          rows: normalizeRows(createDefaultRows()),
-          dayOfWeek: todayInfo.dayOfWeek,
-        },
-      };
+      // ignore and fall back
     }
 
     return {
@@ -388,11 +482,14 @@ export default function App() {
     };
   });
 
+  const checks = useMemo(() => runSelfChecks(), []);
+  const allChecksPass = checks.every((check) => check.pass);
+
   const currentSheet = sheetsByDate[currentDate] || {
     rows: normalizeRows(createDefaultRows()),
     dayOfWeek: getDayInfo(currentDate).dayOfWeek,
   };
-  const rows = currentSheet.rows;
+  const rows = normalizeRows(currentSheet.rows);
   const dayOfWeek = currentSheet.dayOfWeek;
 
   const totals = useMemo(() => {
@@ -423,7 +520,14 @@ export default function App() {
         rows: normalizeRows(createDefaultRows()),
         dayOfWeek: getDayInfo(currentDate).dayOfWeek,
       };
-      return { ...current, [currentDate]: updater(existing) };
+      const updated = updater(existing);
+      return {
+        ...current,
+        [currentDate]: {
+          ...updated,
+          rows: normalizeRows(updated.rows),
+        },
+      };
     });
   };
 
@@ -573,10 +677,23 @@ export default function App() {
     fontSize: 14,
   };
 
+  const smallMutedStyle = {
+    color: "#64748b",
+    fontSize: 12,
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", padding: 16, fontFamily: "Arial, sans-serif" }}>
       <div style={{ maxWidth: 1400, margin: "0 auto" }}>
-        <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 16, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+        <div
+          style={{
+            background: "white",
+            border: "1px solid #e2e8f0",
+            borderRadius: 16,
+            padding: 20,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+          }}
+        >
           <div style={{ display: "flex", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
             <div>
               <h1 style={{ margin: 0, fontSize: 36 }}>26KH1 Tie Stall</h1>
@@ -601,13 +718,13 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ marginTop: 20, marginBottom: 20, padding: 16, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12 }}>
+          <div style={{ marginTop: 20, marginBottom: 12, padding: 16, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12 }}>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>Backup and sync</div>
             <div style={{ color: "#475569", fontSize: 14, marginBottom: 6 }}>
               Local browser save is active. JSON backup works now. Google Drive is enabled for your personal account setup.
             </div>
-            <div style={{ color: "#64748b", fontSize: 12 }}>Status: {driveStatus}{driveAccountName ? ` · ${driveAccountName}` : ""}</div>
-            <div style={{ color: "#64748b", fontSize: 12, marginBottom: 10 }}>Google Drive file ID: {googleDriveFileId || "not linked yet"}</div>
+            <div style={smallMutedStyle}>Status: {driveStatus}{driveAccountName ? ` · ${driveAccountName}` : ""}</div>
+            <div style={{ ...smallMutedStyle, marginBottom: 10 }}>Google Drive file ID: {googleDriveFileId || "not linked yet"}</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <input ref={fileInputRef} type="file" accept="application/json" style={{ display: "none" }} onChange={importFromFile} />
               <button style={buttonStyle} onClick={() => downloadJson(currentDate, sheetsByDate, googleDriveFileId)}>Backup JSON</button>
@@ -616,6 +733,26 @@ export default function App() {
               <button style={buttonStyle} onClick={saveToGoogleDrive}>Save to Google Drive</button>
               <button style={buttonStyle} onClick={loadFromGoogleDrive}>Load from Google Drive</button>
               <button style={buttonStyle} onClick={disconnectGoogleDrive} disabled={!googleAccessToken}>Disconnect</button>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 20, padding: 12, background: allChecksPass ? "#f0fdf4" : "#fef2f2", border: "1px solid #e2e8f0", borderRadius: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Self-checks: {allChecksPass ? "passed" : "failed"}</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {checks.map((check) => (
+                <div
+                  key={check.name}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "1px solid #cbd5e1",
+                    background: check.pass ? "#dcfce7" : "#fecaca",
+                    fontSize: 12,
+                  }}
+                >
+                  {check.name}
+                </div>
+              ))}
             </div>
           </div>
 
@@ -644,15 +781,33 @@ export default function App() {
                 {rows.map((row, index) => (
                   <tr key={row.stall}>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>{row.stall}</td>
-                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}><input style={{ ...inputStyle, background: "#fed7aa" }} value={row.cow} onChange={(e) => updateRow(index, "cow", e.target.value)} /></td>
-                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}><input style={{ ...inputStyle, background: "#fed7aa" }} value={row.diet} onChange={(e) => updateRow(index, "diet", e.target.value)} /></td>
-                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}><input style={{ ...inputStyle, background: "#dbeafe" }} type="number" step="any" value={row.binWeight} onChange={(e) => updateRow(index, "binWeight", e.target.value)} /></td>
-                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}><input style={{ ...inputStyle, background: "#fed7aa" }} type="number" step="any" value={row.binFedYesterday} onChange={(e) => updateRow(index, "binFedYesterday", e.target.value)} /></td>
-                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}><input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.fedYesterday} /></td>
-                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}><input style={{ ...inputStyle, background: "#fed7aa" }} type="number" step="any" value={row.ortsBinToday} onChange={(e) => updateRow(index, "ortsBinToday", e.target.value)} /></td>
-                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}><input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.ortsToday} /></td>
-                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}><input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.fedBinToday} /></td>
-                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}><input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.fedToday} /></td>
+                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                      <input style={{ ...inputStyle, background: "#fed7aa" }} value={row.cow} onChange={(e) => updateRow(index, "cow", e.target.value)} />
+                    </td>
+                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                      <input style={{ ...inputStyle, background: "#fed7aa" }} value={row.diet} onChange={(e) => updateRow(index, "diet", e.target.value)} />
+                    </td>
+                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                      <input style={{ ...inputStyle, background: "#dbeafe" }} type="number" step="any" value={row.binWeight} onChange={(e) => updateRow(index, "binWeight", e.target.value)} />
+                    </td>
+                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                      <input style={{ ...inputStyle, background: "#fed7aa" }} type="number" step="any" value={row.binFedYesterday} onChange={(e) => updateRow(index, "binFedYesterday", e.target.value)} />
+                    </td>
+                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                      <input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.fedYesterday} />
+                    </td>
+                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                      <input style={{ ...inputStyle, background: "#fed7aa" }} type="number" step="any" value={row.ortsBinToday} onChange={(e) => updateRow(index, "ortsBinToday", e.target.value)} />
+                    </td>
+                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                      <input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.ortsToday} />
+                    </td>
+                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                      <input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.fedBinToday} />
+                    </td>
+                    <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                      <input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.fedToday} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
