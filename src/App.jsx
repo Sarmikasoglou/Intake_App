@@ -62,6 +62,7 @@ function createDefaultRows(setupRows = INITIAL_SETUP_ROWS) {
     ortsBinToday: "",
     ortsToday: "",
     fedBinToday: "",
+    manualFedBinToday: "",
     fedToday: "",
   }));
 }
@@ -91,6 +92,7 @@ function recalcRow(row) {
   const binWeight = toNumber(row.binWeight);
   const binFedYesterday = toNumber(row.binFedYesterday);
   const ortsBinToday = toNumber(row.ortsBinToday);
+  const manualFedBinToday = toNumber(row.manualFedBinToday);
 
   const fedYesterday =
     binWeight !== null && binFedYesterday !== null ? binFedYesterday - binWeight : null;
@@ -98,16 +100,17 @@ function recalcRow(row) {
   const ortsToday =
     binWeight !== null && ortsBinToday !== null ? ortsBinToday - binWeight : null;
 
-  const fedBinToday = calculateFedBinToday(binFedYesterday, ortsToday);
+  const calculatedFedBinToday = calculateFedBinToday(binFedYesterday, ortsToday);
+  const finalFedBinToday = manualFedBinToday !== null ? manualFedBinToday : calculatedFedBinToday;
 
   const fedToday =
-    binWeight !== null && fedBinToday !== null ? fedBinToday - binWeight : null;
+    binWeight !== null && finalFedBinToday !== null ? finalFedBinToday - binWeight : null;
 
   return {
     ...row,
     fedYesterday: formatCalc(fedYesterday),
     ortsToday: formatCalc(ortsToday),
-    fedBinToday: formatCalc(fedBinToday),
+    fedBinToday: formatCalc(finalFedBinToday),
     fedToday: formatCalc(fedToday),
   };
 }
@@ -163,6 +166,7 @@ function buildNextDayRows(rows) {
       ortsBinToday: "",
       ortsToday: "",
       fedBinToday: "",
+      manualFedBinToday: "",
       fedToday: "",
     })
   );
@@ -306,6 +310,7 @@ function runSelfChecks() {
     ortsBinToday: "18.8",
     ortsToday: "",
     fedBinToday: "",
+    manualFedBinToday: "",
     fedToday: "",
   });
 
@@ -331,6 +336,24 @@ function runSelfChecks() {
   checks.push({
     name: "user edits persist",
     pass: overriddenRows[0].cow === "9999" && overriddenRows[0].binWeight === "11.2",
+  });
+
+  const manualOverrideSample = recalcRow({
+    stall: "1",
+    cow: "123",
+    diet: "A",
+    binWeight: "63",
+    binFedYesterday: "200",
+    fedYesterday: "",
+    ortsBinToday: "70",
+    ortsToday: "",
+    fedBinToday: "",
+    manualFedBinToday: "205",
+    fedToday: "",
+  });
+  checks.push({
+    name: "manual fed + bin edit",
+    pass: manualOverrideSample.fedBinToday === "205" && manualOverrideSample.fedToday === "142",
   });
 
   const exportRow = buildExportRows([sample])[0];
@@ -472,7 +495,18 @@ export default function App() {
   const updateRow = (index, key, value) => {
     updateCurrentSheet((sheet) => ({
       ...sheet,
-      rows: sheet.rows.map((row, i) => (i === index ? recalcRow({ ...row, [key]: value }) : row)),
+      rows: sheet.rows.map((row, i) => {
+        if (i !== index) return row;
+        if (key === "fedBinToday") {
+          const nextRow = {
+            ...row,
+            manualFedBinToday: value,
+            fedBinToday: value,
+          };
+          return recalcRow(nextRow);
+        }
+        return recalcRow({ ...row, [key]: value });
+      }),
     }));
   };
 
@@ -880,7 +914,13 @@ export default function App() {
                       <input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.ortsToday} />
                     </td>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
-                      <input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.fedBinToday} />
+                      <input
+                        style={{ ...inputStyle, background: "#fef08a" }}
+                        type="number"
+                        step="any"
+                        value={row.fedBinToday}
+                        onChange={(e) => updateRow(index, "fedBinToday", e.target.value)}
+                      />
                     </td>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
                       <input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.fedToday} />
