@@ -83,7 +83,8 @@ function calculateFedBinToday(binFedYesterday, ortsToday) {
   if (ortsToday < 8) return binFedYesterday + 5;
   if (ortsToday > 18) return binFedYesterday - 10;
   if (ortsToday > 13) return binFedYesterday - 5;
-  return null;
+  // 8 to 13 inclusive: keep same as yesterday
+  return binFedYesterday;
 }
 
 function recalcRow(row) {
@@ -343,7 +344,15 @@ function runSelfChecks() {
       exportRow[5] === "128.8",
   });
 
-  return checks;
+  const logicPreview = [
+    { orts: "< 5", action: "+10", example: "200 → 210" },
+    { orts: "5 to < 8", action: "+5", example: "200 → 205" },
+    { orts: "8 to 13", action: "same as yesterday", example: "200 → 200" },
+    { orts: "> 13 to 18", action: "-5", example: "200 → 195" },
+    { orts: "> 18", action: "-10", example: "200 → 190" },
+  ];
+
+  return { checks, logicPreview };
 }
 
 export default function App() {
@@ -409,7 +418,9 @@ export default function App() {
     };
   });
 
-  const checks = useMemo(() => runSelfChecks(), []);
+  const selfCheckData = useMemo(() => runSelfChecks(), []);
+  const checks = selfCheckData.checks;
+  const logicPreview = selfCheckData.logicPreview;
   const allChecksPass = checks.every((check) => check.pass);
 
   const currentSheet = sheetsByDate[currentDate] || {
@@ -746,7 +757,7 @@ export default function App() {
             <div style={{ fontWeight: 700, marginBottom: 6 }}>
               Self-checks: {allChecksPass ? "passed" : "failed"}
             </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
               {checks.map((check) => (
                 <div
                   key={check.name}
@@ -761,6 +772,27 @@ export default function App() {
                   {check.name}
                 </div>
               ))}
+            </div>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Logic preview</div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: "white" }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    <th style={{ border: "1px solid #cbd5e1", padding: 8, textAlign: "left" }}>Orts range</th>
+                    <th style={{ border: "1px solid #cbd5e1", padding: 8, textAlign: "left" }}>Fed + Bin rule</th>
+                    <th style={{ border: "1px solid #cbd5e1", padding: 8, textAlign: "left" }}>Example</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logicPreview.map((row) => (
+                    <tr key={row.orts}>
+                      <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{row.orts}</td>
+                      <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{row.action}</td>
+                      <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{row.example}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
