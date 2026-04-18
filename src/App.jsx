@@ -4,37 +4,59 @@ const DEFAULT_ROW_COUNT = 32;
 const STORAGE_KEYS = {
   currentDate: "tieStall.currentDate",
   sheetsByDate: "tieStall.sheetsByDate",
-  googleDriveFileId: "tieStall.googleDriveFileId",
+  setupRows: "tieStall.setupRows",
 };
 
-const GOOGLE_DRIVE_CONFIG = {
-  enabled: true,
-  clientId: "136823141935-51ejjgto1bmu018rifcmtuilc7g2us3a.apps.googleusercontent.com",
-  appName: "Tie Stall Intake",
-  fileName: "tie-stall-data.json",
-  scopes: ["https://www.googleapis.com/auth/drive.file"],
-};
+const INITIAL_SETUP_ROWS = [
+  { stall: "1", cow: "5849", binWeight: "63" },
+  { stall: "2", cow: "4023", binWeight: "65" },
+  { stall: "3", cow: "57402", binWeight: "62" },
+  { stall: "4", cow: "5844", binWeight: "63" },
+  { stall: "5", cow: "6009", binWeight: "64" },
+  { stall: "6", cow: "5950", binWeight: "63" },
+  { stall: "7", cow: "3041", binWeight: "60" },
+  { stall: "8", cow: "3074", binWeight: "65" },
+  { stall: "9", cow: "5992", binWeight: "59" },
+  { stall: "10", cow: "2737", binWeight: "61" },
+  { stall: "11", cow: "5982", binWeight: "60" },
+  { stall: "12", cow: "2804", binWeight: "60" },
+  { stall: "13", cow: "5981", binWeight: "61" },
+  { stall: "14", cow: "3061", binWeight: "62" },
+  { stall: "15", cow: "5929", binWeight: "60" },
+  { stall: "16", cow: "3062", binWeight: "91" },
+  { stall: "17", cow: "2835", binWeight: "66" },
+  { stall: "18", cow: "2780", binWeight: "73" },
+  { stall: "19", cow: "5850", binWeight: "67" },
+  { stall: "20", cow: "3010", binWeight: "70" },
+  { stall: "21", cow: "3068", binWeight: "72" },
+  { stall: "22", cow: "5997", binWeight: "60" },
+  { stall: "23", cow: "6034", binWeight: "69" },
+  { stall: "24", cow: "6044", binWeight: "67" },
+  { stall: "25", cow: "5848", binWeight: "73" },
+  { stall: "26", cow: "2948", binWeight: "67" },
+  { stall: "27", cow: "3472", binWeight: "62" },
+  { stall: "28", cow: "2539", binWeight: "62" },
+  { stall: "29", cow: "5463", binWeight: "63" },
+  { stall: "30", cow: "2451", binWeight: "62" },
+  { stall: "31", cow: "5864", binWeight: "61" },
+  { stall: "32", cow: "3085", binWeight: "" },
+];
 
-function createDefaultRows() {
-  const cows = [
-    "5849", "4023", "57402", "5844", "6009", "5950", "3041", "3074", "5992", "2737",
-    "5982", "2804", "5981", "3061", "3085", "3062", "2835", "2780", "5850", "3010",
-    "3068", "5997", "6034", "6044", "5848", "2948", "3472", "2539", "5463", "2451",
-    "5864", "5929",
-  ];
-
-  const binWeights = [
-    "63", "65", "62", "63", "64", "63", "60", "65", "59", "61",
-    "60", "60", "61", "62", "60", "91", "66", "73", "67", "70",
-    "72", "60", "69", "67", "73", "67", "62", "62", "63", "62",
-    "61", "",
-  ];
-
+function normalizeSetupRows(rows) {
   return Array.from({ length: DEFAULT_ROW_COUNT }, (_, i) => ({
     stall: String(i + 1),
-    cow: cows[i] || "",
+    cow: rows?.[i]?.cow || "",
+    binWeight: rows?.[i]?.binWeight || "",
+  }));
+}
+
+function createDefaultRows(setupRows = INITIAL_SETUP_ROWS) {
+  const normalizedSetup = normalizeSetupRows(setupRows);
+  return normalizedSetup.map((setupRow, i) => ({
+    stall: String(i + 1),
+    cow: setupRow.cow || "",
     diet: "",
-    binWeight: binWeights[i] || "",
+    binWeight: setupRow.binWeight || "",
     binFedYesterday: "",
     fedYesterday: "",
     ortsBinToday: "",
@@ -89,22 +111,28 @@ function recalcRow(row) {
   };
 }
 
-function applyDefaultSetup(rows) {
-  const defaults = createDefaultRows();
+function applyDefaultSetup(rows, setupRows = INITIAL_SETUP_ROWS) {
+  const defaults = createDefaultRows(setupRows);
   return defaults.map((defaultRow, i) => {
     const existingRow = rows[i] || {};
     return {
       ...defaultRow,
       ...existingRow,
       stall: defaultRow.stall,
-      cow: defaultRow.cow,
-      binWeight: defaultRow.binWeight,
+      cow:
+        existingRow.cow !== undefined && existingRow.cow !== ""
+          ? existingRow.cow
+          : defaultRow.cow,
+      binWeight:
+        existingRow.binWeight !== undefined && existingRow.binWeight !== ""
+          ? existingRow.binWeight
+          : defaultRow.binWeight,
     };
   });
 }
 
-function normalizeRows(rows) {
-  return applyDefaultSetup(rows).map(recalcRow);
+function normalizeRows(rows, setupRows = INITIAL_SETUP_ROWS) {
+  return applyDefaultSetup(rows, setupRows).map(recalcRow);
 }
 
 function getDayInfo(dateString) {
@@ -139,17 +167,16 @@ function buildNextDayRows(rows) {
   );
 }
 
-function buildAppStatePayload(currentDate, sheetsByDate, googleDriveFileId) {
+function buildAppStatePayload(currentDate, sheetsByDate) {
   return {
     version: 1,
     exportedAt: new Date().toISOString(),
     currentDate,
     sheetsByDate,
-    googleDriveFileId: googleDriveFileId || null,
   };
 }
 
-function sanitizeImportedState(payload) {
+function sanitizeImportedState(payload, setupRows = INITIAL_SETUP_ROWS) {
   if (!payload || typeof payload !== "object") {
     throw new Error("Invalid file format.");
   }
@@ -161,9 +188,10 @@ function sanitizeImportedState(payload) {
   const normalizedSheets = Object.fromEntries(
     Object.entries(payload.sheetsByDate).map(([date, sheet]) => {
       const rows = Array.isArray(sheet?.rows)
-        ? normalizeRows(sheet.rows)
-        : normalizeRows(createDefaultRows());
-      const dayOfWeek = typeof sheet?.dayOfWeek === "string" ? sheet.dayOfWeek : getDayInfo(date).dayOfWeek;
+        ? normalizeRows(sheet.rows, setupRows)
+        : normalizeRows(createDefaultRows(setupRows), setupRows);
+      const dayOfWeek =
+        typeof sheet?.dayOfWeek === "string" ? sheet.dayOfWeek : getDayInfo(date).dayOfWeek;
       return [date, { rows, dayOfWeek }];
     })
   );
@@ -176,32 +204,27 @@ function sanitizeImportedState(payload) {
   return {
     currentDate: safeCurrentDate,
     sheetsByDate: normalizedSheets,
-    googleDriveFileId: typeof payload.googleDriveFileId === "string" ? payload.googleDriveFileId : "",
   };
 }
 
 function buildExportRows(rows) {
-  return rows.map((r) => [
-    r.stall,
-    r.cow,
-    r.diet,
-    r.fedYesterday,
-    r.ortsToday,
-    r.fedToday,
-  ]);
+  return rows.map((r) => [r.stall, r.cow, r.diet, r.fedYesterday, r.ortsToday, r.fedToday]);
 }
 
-function downloadCsv(rows, date, dayOfWeek) {
+function buildCsvText(rows, date, dayOfWeek) {
   const header1 = ["26KH1 Tie Stall", "", "", "", `Date: ${date}`, ""];
   const header2 = ["", "", "", "", `Day of the Week: ${dayOfWeek}`, ""];
   const header3 = ["Stall", "Cow", "Diet", "Fed (lbs)", "Orts", "Fed"];
   const header4 = ["", "", "", "Yesterday", "Today", "Today"];
   const body = buildExportRows(rows);
 
-  const csv = [header1, header2, header3, header4, ...body]
+  return [header1, header2, header3, header4, ...body]
     .map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(","))
     .join("\n");
+}
 
+function downloadCsv(rows, date, dayOfWeek) {
+  const csv = buildCsvText(rows, date, dayOfWeek);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -211,8 +234,29 @@ function downloadCsv(rows, date, dayOfWeek) {
   URL.revokeObjectURL(url);
 }
 
-function downloadJson(currentDate, sheetsByDate, googleDriveFileId) {
-  const payload = buildAppStatePayload(currentDate, sheetsByDate, googleDriveFileId);
+function emailCsvToRecipient(rows, date, dayOfWeek, recipientEmail) {
+  const trimmedEmail = String(recipientEmail || "").trim();
+  if (!trimmedEmail) {
+    throw new Error("Enter an email address first.");
+  }
+
+  const csvFileName = `tie-stall-intake-${date || "sheet"}.csv`;
+  const subject = `Tie Stall Intake CSV - ${date}`;
+  const body = [
+    "Attached is the exported Tie Stall Intake CSV.",
+    "",
+    `File name: ${csvFileName}`,
+    "The CSV has also been downloaded automatically from the app.",
+    "Please attach that downloaded file before sending.",
+  ].join("\n");
+
+  window.location.href = `mailto:${encodeURIComponent(trimmedEmail)}?subject=${encodeURIComponent(
+    subject
+  )}&body=${encodeURIComponent(body)}`;
+}
+
+function downloadJson(currentDate, sheetsByDate) {
+  const payload = buildAppStatePayload(currentDate, sheetsByDate);
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json;charset=utf-8;",
   });
@@ -229,157 +273,26 @@ async function readJsonFile(file) {
   return JSON.parse(text);
 }
 
-async function loadGoogleIdentityServices() {
-  if (window.google?.accounts?.oauth2) return window.google;
-
-  await new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[data-google-identity="true"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener(
-        "error",
-        () => reject(new Error("Failed to load Google Identity Services.")),
-        { once: true }
-      );
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.dataset.googleIdentity = "true";
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Google Identity Services."));
-    document.head.appendChild(script);
-  });
-
-  return window.google;
-}
-
-function createGoogleTokenClient() {
-  if (!GOOGLE_DRIVE_CONFIG.enabled) {
-    throw new Error("Google Drive is not configured yet. Add your clientId first.");
-  }
-
-  if (!window.google?.accounts?.oauth2) {
-    throw new Error("Google Identity Services is not loaded yet.");
-  }
-
-  return window.google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_DRIVE_CONFIG.clientId,
-    scope: GOOGLE_DRIVE_CONFIG.scopes.join(" "),
-    callback: () => {},
-  });
-}
-
-async function requestGoogleAccessToken(prompt = "consent") {
-  await loadGoogleIdentityServices();
-
-  return new Promise((resolve, reject) => {
-    const tokenClient = createGoogleTokenClient();
-    tokenClient.callback = (response) => {
-      if (response?.error) {
-        reject(new Error(response.error));
-        return;
-      }
-      resolve(response.access_token);
-    };
-    tokenClient.requestAccessToken({ prompt });
-  });
-}
-
-async function fetchGoogleProfile(accessToken) {
-  const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  if (!response.ok) throw new Error("Could not load Google account info.");
-  return response.json();
-}
-
-function createDriveMultipartRequestBody(metadata, fileText) {
-  const boundary = `tie-stall-${Date.now()}`;
-  const delimiter = `--${boundary}`;
-  const closeDelimiter = `--${boundary}--`;
-  const body = [
-    delimiter,
-    "Content-Type: application/json; charset=UTF-8",
-    "",
-    JSON.stringify(metadata),
-    delimiter,
-    "Content-Type: application/json",
-    "",
-    fileText,
-    closeDelimiter,
-    "",
-  ].join("\r\n");
-
-  return { boundary, body };
-}
-
-async function uploadJsonToGoogleDrive(accessToken, payload, existingFileId) {
-  const metadata = {
-    name: GOOGLE_DRIVE_CONFIG.fileName,
-    mimeType: "application/json",
-  };
-  const fileText = JSON.stringify(payload, null, 2);
-  const multipart = createDriveMultipartRequestBody(metadata, fileText);
-
-  const isUpdate = Boolean(existingFileId);
-  const endpoint = isUpdate
-    ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
-    : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
-
-  const response = await fetch(endpoint, {
-    method: isUpdate ? "PATCH" : "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": `multipart/related; boundary=${multipart.boundary}`,
-    },
-    body: multipart.body,
-  });
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`Google Drive save failed: ${message}`);
-  }
-
-  return response.json();
-}
-
-async function downloadJsonFromGoogleDrive(accessToken, fileId) {
-  if (!fileId) {
-    throw new Error("No Google Drive file is linked yet. Save once first, or restore from JSON.");
-  }
-
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`Google Drive load failed: ${message}`);
-  }
-
-  return response.json();
-}
-
 function runSelfChecks() {
   const checks = [];
 
-  const defaultRows = createDefaultRows();
-  checks.push({
-    name: "32 default stalls",
-    pass: defaultRows.length === 32,
-  });
+  const defaultRows = createDefaultRows(INITIAL_SETUP_ROWS);
+  checks.push({ name: "32 default stalls", pass: defaultRows.length === 32 });
   checks.push({
     name: "stall 31 prefill",
     pass: defaultRows[30].cow === "5864" && defaultRows[30].binWeight === "61",
   });
   checks.push({
     name: "stall 32 prefill",
-    pass: defaultRows[31].cow === "5929" && defaultRows[31].binWeight === "",
+    pass: defaultRows[31].cow === "3085" && defaultRows[31].binWeight === "",
+  });
+
+  const editableSetup = normalizeSetupRows(INITIAL_SETUP_ROWS);
+  editableSetup[0] = { stall: "1", cow: "9999", binWeight: "88" };
+  const editedDefaults = createDefaultRows(editableSetup);
+  checks.push({
+    name: "editable setup",
+    pass: editedDefaults[0].cow === "9999" && editedDefaults[0].binWeight === "88",
   });
 
   const sample = recalcRow({
@@ -404,16 +317,19 @@ function runSelfChecks() {
       sample.fedToday === "128.8",
   });
 
-  const mergedRows = normalizeRows([{ stall: "1", cow: "", binWeight: "" }]);
+  const mergedRows = normalizeRows([{ stall: "1", cow: "", binWeight: "" }], INITIAL_SETUP_ROWS);
   checks.push({
     name: "default setup merge",
     pass: mergedRows[0].cow === "5849" && mergedRows[0].binWeight === "63",
   });
 
-  const overriddenRows = normalizeRows([{ stall: "1", cow: "9999", binWeight: "11.2" }]);
+  const overriddenRows = normalizeRows(
+    [{ stall: "1", cow: "9999", binWeight: "11.2" }],
+    INITIAL_SETUP_ROWS
+  );
   checks.push({
-    name: "setup overrides old values",
-    pass: overriddenRows[0].cow === "5849" && overriddenRows[0].binWeight === "63",
+    name: "user edits persist",
+    pass: overriddenRows[0].cow === "9999" && overriddenRows[0].binWeight === "11.2",
   });
 
   const exportRow = buildExportRows([sample])[0];
@@ -433,15 +349,17 @@ function runSelfChecks() {
 export default function App() {
   const todayInfo = getDayInfo(new Date().toISOString().slice(0, 10));
   const fileInputRef = useRef(null);
-  const [driveStatus, setDriveStatus] = useState("Not connected");
-  const [driveAccountName, setDriveAccountName] = useState("");
-  const [googleAccessToken, setGoogleAccessToken] = useState("");
-  const [googleDriveFileId, setGoogleDriveFileId] = useState(() => {
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [emailStatus, setEmailStatus] = useState("");
+  const [showSetupEditor, setShowSetupEditor] = useState(false);
+  const [setupRows, setSetupRows] = useState(() => {
     try {
-      return localStorage.getItem(STORAGE_KEYS.googleDriveFileId) || "";
+      const saved = localStorage.getItem(STORAGE_KEYS.setupRows);
+      if (saved) return normalizeSetupRows(JSON.parse(saved));
     } catch {
-      return "";
+      // ignore and fall back
     }
+    return normalizeSetupRows(INITIAL_SETUP_ROWS);
   });
 
   const [currentDate, setCurrentDate] = useState(() => {
@@ -455,13 +373,21 @@ export default function App() {
   const [sheetsByDate, setSheetsByDate] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.sheetsByDate);
+      const savedSetup = localStorage.getItem(STORAGE_KEYS.setupRows);
+      const currentSetupRows = savedSetup
+        ? normalizeSetupRows(JSON.parse(savedSetup))
+        : normalizeSetupRows(INITIAL_SETUP_ROWS);
+
       if (saved) {
         const parsed = JSON.parse(saved);
         return Object.fromEntries(
           Object.entries(parsed).map(([date, sheet]) => [
             date,
             {
-              rows: normalizeRows(Array.isArray(sheet?.rows) ? sheet.rows : createDefaultRows()),
+              rows: normalizeRows(
+                Array.isArray(sheet?.rows) ? sheet.rows : createDefaultRows(currentSetupRows),
+                currentSetupRows
+              ),
               dayOfWeek:
                 typeof sheet?.dayOfWeek === "string"
                   ? sheet.dayOfWeek
@@ -474,9 +400,10 @@ export default function App() {
       // ignore and fall back
     }
 
+    const currentSetupRows = normalizeSetupRows(INITIAL_SETUP_ROWS);
     return {
       [todayInfo.date]: {
-        rows: normalizeRows(createDefaultRows()),
+        rows: normalizeRows(createDefaultRows(currentSetupRows), currentSetupRows),
         dayOfWeek: todayInfo.dayOfWeek,
       },
     };
@@ -486,10 +413,10 @@ export default function App() {
   const allChecksPass = checks.every((check) => check.pass);
 
   const currentSheet = sheetsByDate[currentDate] || {
-    rows: normalizeRows(createDefaultRows()),
+    rows: normalizeRows(createDefaultRows(setupRows), setupRows),
     dayOfWeek: getDayInfo(currentDate).dayOfWeek,
   };
-  const rows = normalizeRows(currentSheet.rows);
+  const rows = normalizeRows(currentSheet.rows, setupRows);
   const dayOfWeek = currentSheet.dayOfWeek;
 
   const totals = useMemo(() => {
@@ -508,16 +435,16 @@ export default function App() {
     try {
       localStorage.setItem(STORAGE_KEYS.sheetsByDate, JSON.stringify(sheetsByDate));
       localStorage.setItem(STORAGE_KEYS.currentDate, currentDate);
-      localStorage.setItem(STORAGE_KEYS.googleDriveFileId, googleDriveFileId);
+      localStorage.setItem(STORAGE_KEYS.setupRows, JSON.stringify(setupRows));
     } catch {
       // ignore storage errors
     }
-  }, [sheetsByDate, currentDate, googleDriveFileId]);
+  }, [sheetsByDate, currentDate, setupRows]);
 
   const updateCurrentSheet = (updater) => {
     setSheetsByDate((current) => {
       const existing = current[currentDate] || {
-        rows: normalizeRows(createDefaultRows()),
+        rows: normalizeRows(createDefaultRows(setupRows), setupRows),
         dayOfWeek: getDayInfo(currentDate).dayOfWeek,
       };
       const updated = updater(existing);
@@ -525,7 +452,7 @@ export default function App() {
         ...current,
         [currentDate]: {
           ...updated,
-          rows: normalizeRows(updated.rows),
+          rows: normalizeRows(updated.rows, setupRows),
         },
       };
     });
@@ -546,7 +473,10 @@ export default function App() {
     const resetInfo = getDayInfo(currentDate);
     setSheetsByDate((current) => ({
       ...current,
-      [currentDate]: { rows: normalizeRows(createDefaultRows()), dayOfWeek: resetInfo.dayOfWeek },
+      [currentDate]: {
+        rows: normalizeRows(createDefaultRows(setupRows), setupRows),
+        dayOfWeek: resetInfo.dayOfWeek,
+      },
     }));
   };
 
@@ -556,7 +486,10 @@ export default function App() {
       if (current[info.date]) return current;
       return {
         ...current,
-        [info.date]: { rows: normalizeRows(createDefaultRows()), dayOfWeek: info.dayOfWeek },
+        [info.date]: {
+          rows: normalizeRows(createDefaultRows(setupRows), setupRows),
+          dayOfWeek: info.dayOfWeek,
+        },
       };
     });
     setCurrentDate(info.date);
@@ -566,7 +499,10 @@ export default function App() {
     const nextDay = shiftDate(currentDate, 1);
     setSheetsByDate((current) => ({
       ...current,
-      [nextDay.date]: { rows: buildNextDayRows(rows), dayOfWeek: nextDay.dayOfWeek },
+      [nextDay.date]: {
+        rows: buildNextDayRows(rows),
+        dayOfWeek: nextDay.dayOfWeek,
+      },
     }));
     setCurrentDate(nextDay.date);
   };
@@ -577,85 +513,28 @@ export default function App() {
 
     try {
       const parsed = await readJsonFile(file);
-      const imported = sanitizeImportedState(parsed);
+      const imported = sanitizeImportedState(parsed, setupRows);
       setSheetsByDate(imported.sheetsByDate);
       setCurrentDate(imported.currentDate);
-      setGoogleDriveFileId(imported.googleDriveFileId || "");
-      setDriveStatus("Backup restored.");
+      setEmailStatus("Backup restored.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Import failed.";
-      setDriveStatus(`Import error: ${message}`);
+      setEmailStatus(`Import error: ${message}`);
     } finally {
       event.target.value = "";
     }
   };
 
-  const connectToGoogleDrive = async () => {
+  const emailExportCsv = () => {
     try {
-      setDriveStatus("Connecting to Google Drive...");
-      const token = await requestGoogleAccessToken("consent");
-      const profile = await fetchGoogleProfile(token);
-      setGoogleAccessToken(token);
-      setDriveAccountName(profile.email || profile.name || "Connected Google account");
-      setDriveStatus("Connected to Google Drive");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Connection failed.";
-      setDriveStatus(message);
-    }
-  };
-
-  const disconnectGoogleDrive = () => {
-    if (googleAccessToken && window.google?.accounts?.oauth2?.revoke) {
-      window.google.accounts.oauth2.revoke(googleAccessToken, () => {});
-    }
-    setGoogleAccessToken("");
-    setDriveAccountName("");
-    setDriveStatus("Not connected");
-  };
-
-  const saveToGoogleDrive = async () => {
-    try {
-      setDriveStatus("Saving to Google Drive...");
-      const token = googleAccessToken || (await requestGoogleAccessToken(""));
-      if (!googleAccessToken) {
-        const profile = await fetchGoogleProfile(token);
-        setDriveAccountName(profile.email || profile.name || "Connected Google account");
-      }
-      setGoogleAccessToken(token);
-
-      const response = await uploadJsonToGoogleDrive(
-        token,
-        buildAppStatePayload(currentDate, sheetsByDate, googleDriveFileId),
-        googleDriveFileId
+      downloadCsv(rows, currentDate, dayOfWeek);
+      emailCsvToRecipient(rows, currentDate, dayOfWeek, recipientEmail);
+      setEmailStatus(
+        `Opened an email draft for ${recipientEmail}. Attach the downloaded CSV before sending.`
       );
-
-      if (response?.id) setGoogleDriveFileId(response.id);
-      setDriveStatus(`Saved to Google Drive as ${GOOGLE_DRIVE_CONFIG.fileName}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Save failed.";
-      setDriveStatus(message);
-    }
-  };
-
-  const loadFromGoogleDrive = async () => {
-    try {
-      setDriveStatus("Loading from Google Drive...");
-      const token = googleAccessToken || (await requestGoogleAccessToken(""));
-      if (!googleAccessToken) {
-        const profile = await fetchGoogleProfile(token);
-        setDriveAccountName(profile.email || profile.name || "Connected Google account");
-      }
-      setGoogleAccessToken(token);
-
-      const payload = await downloadJsonFromGoogleDrive(token, googleDriveFileId);
-      const imported = sanitizeImportedState(payload);
-      setSheetsByDate(imported.sheetsByDate);
-      setCurrentDate(imported.currentDate);
-      setGoogleDriveFileId(imported.googleDriveFileId || googleDriveFileId);
-      setDriveStatus(`Loaded from Google Drive file ${googleDriveFileId || GOOGLE_DRIVE_CONFIG.fileName}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Load failed.";
-      setDriveStatus(message);
+      const message = error instanceof Error ? error.message : "Email draft failed.";
+      setEmailStatus(message);
     }
   };
 
@@ -682,8 +561,41 @@ export default function App() {
     fontSize: 12,
   };
 
+  const setupInputStyle = {
+    ...inputStyle,
+    background: "white",
+    fontSize: 13,
+  };
+
+  const updateSetupRow = (index, key, value) => {
+    setSetupRows((current) =>
+      normalizeSetupRows(current.map((row, i) => (i === index ? { ...row, [key]: value } : row)))
+    );
+  };
+
+  const applySetupToAllDays = () => {
+    setSheetsByDate((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([date, sheet]) => [
+          date,
+          {
+            ...sheet,
+            rows: normalizeRows(sheet.rows, setupRows),
+          },
+        ])
+      )
+    );
+  };
+
   return (
-    <div style={{ minHeight: "100vh", background: "#f8fafc", padding: 16, fontFamily: "Arial, sans-serif" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f8fafc",
+        padding: 16,
+        fontFamily: "Arial, sans-serif",
+      }}
+    >
       <div style={{ maxWidth: 1400, margin: "0 auto" }}>
         <div
           style={{
@@ -703,9 +615,18 @@ export default function App() {
               <div>
                 <label style={{ display: "block", marginBottom: 6 }}>Date</label>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button style={buttonStyle} onClick={() => goToDate(shiftDate(currentDate, -1).date)}>◀</button>
-                  <input style={inputStyle} type="date" value={currentDate} onChange={(e) => goToDate(e.target.value)} />
-                  <button style={buttonStyle} onClick={() => goToDate(shiftDate(currentDate, 1).date)}>▶</button>
+                  <button style={buttonStyle} onClick={() => goToDate(shiftDate(currentDate, -1).date)}>
+                    ◀
+                  </button>
+                  <input
+                    style={inputStyle}
+                    type="date"
+                    value={currentDate}
+                    onChange={(e) => goToDate(e.target.value)}
+                  />
+                  <button style={buttonStyle} onClick={() => goToDate(shiftDate(currentDate, 1).date)}>
+                    ▶
+                  </button>
                 </div>
               </div>
               <div>
@@ -713,31 +634,118 @@ export default function App() {
                 <input style={inputStyle} value={dayOfWeek} onChange={(e) => updateDayOfWeek(e.target.value)} />
               </div>
               <button style={buttonStyle} onClick={resetSheet}>Reset Day</button>
+              <button style={buttonStyle} onClick={() => setShowSetupEditor((v) => !v)}>
+                {showSetupEditor ? "Hide Setup" : "Edit Stall Setup"}
+              </button>
+              <button style={buttonStyle} onClick={applySetupToAllDays}>Apply Setup</button>
               <button style={buttonStyle} onClick={carryForwardToNextDay}>Start Next Day</button>
-              <button style={buttonStyle} onClick={() => downloadCsv(rows, currentDate, dayOfWeek)}>Export CSV</button>
+              <button style={buttonStyle} onClick={() => downloadCsv(rows, currentDate, dayOfWeek)}>
+                Export CSV
+              </button>
             </div>
           </div>
 
-          <div style={{ marginTop: 20, marginBottom: 12, padding: 16, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Backup and sync</div>
+          <div
+            style={{
+              marginTop: 20,
+              marginBottom: 12,
+              padding: 16,
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: 12,
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Backup and email</div>
             <div style={{ color: "#475569", fontSize: 14, marginBottom: 6 }}>
-              Local browser save is active. JSON backup works now. Google Drive is enabled for your personal account setup.
+              Local browser save is active. You can export the CSV, back up the app JSON, or open an email draft for the exported CSV.
             </div>
-            <div style={smallMutedStyle}>Status: {driveStatus}{driveAccountName ? ` · ${driveAccountName}` : ""}</div>
-            <div style={{ ...smallMutedStyle, marginBottom: 10 }}>Google Drive file ID: {googleDriveFileId || "not linked yet"}</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <input ref={fileInputRef} type="file" accept="application/json" style={{ display: "none" }} onChange={importFromFile} />
-              <button style={buttonStyle} onClick={() => downloadJson(currentDate, sheetsByDate, googleDriveFileId)}>Backup JSON</button>
-              <button style={buttonStyle} onClick={() => fileInputRef.current?.click()}>Restore JSON</button>
-              <button style={buttonStyle} onClick={connectToGoogleDrive}>Connect Google Drive</button>
-              <button style={buttonStyle} onClick={saveToGoogleDrive}>Save to Google Drive</button>
-              <button style={buttonStyle} onClick={loadFromGoogleDrive}>Load from Google Drive</button>
-              <button style={buttonStyle} onClick={disconnectGoogleDrive} disabled={!googleAccessToken}>Disconnect</button>
+            <div style={{ ...smallMutedStyle, marginBottom: 10 }}>Status: {emailStatus || "Ready"}</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json"
+                style={{ display: "none" }}
+                onChange={importFromFile}
+              />
+              <button style={buttonStyle} onClick={() => downloadJson(currentDate, sheetsByDate)}>
+                Backup JSON
+              </button>
+              <button style={buttonStyle} onClick={() => fileInputRef.current?.click()}>
+                Restore JSON
+              </button>
+              <input
+                style={{ ...inputStyle, maxWidth: 260, background: "white" }}
+                type="email"
+                value={recipientEmail}
+                placeholder="email@example.com"
+                onChange={(e) => setRecipientEmail(e.target.value)}
+              />
+              <button style={buttonStyle} onClick={emailExportCsv}>Email CSV</button>
             </div>
           </div>
 
-          <div style={{ marginBottom: 20, padding: 12, background: allChecksPass ? "#f0fdf4" : "#fef2f2", border: "1px solid #e2e8f0", borderRadius: 12 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>Self-checks: {allChecksPass ? "passed" : "failed"}</div>
+          {showSetupEditor && (
+            <div
+              style={{
+                marginBottom: 20,
+                padding: 16,
+                background: "#fff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 12,
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Edit stall setup</div>
+              <div style={{ ...smallMutedStyle, marginBottom: 10 }}>
+                Update the default Cow and Bin Weight values here. Click Apply Setup to push them into all saved days.
+              </div>
+              <div style={{ overflowX: "auto", maxHeight: 340, border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      <th style={{ border: "1px solid #cbd5e1", padding: 8 }}>Stall</th>
+                      <th style={{ border: "1px solid #cbd5e1", padding: 8 }}>Cow</th>
+                      <th style={{ border: "1px solid #cbd5e1", padding: 8 }}>Bin Weight (lbs)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {setupRows.map((row, index) => (
+                      <tr key={`setup-${row.stall}`}>
+                        <td style={{ border: "1px solid #cbd5e1", padding: 8, textAlign: "center" }}>{row.stall}</td>
+                        <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                          <input
+                            style={setupInputStyle}
+                            value={row.cow}
+                            onChange={(e) => updateSetupRow(index, "cow", e.target.value)}
+                          />
+                        </td>
+                        <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
+                          <input
+                            style={setupInputStyle}
+                            value={row.binWeight}
+                            onChange={(e) => updateSetupRow(index, "binWeight", e.target.value)}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div
+            style={{
+              marginBottom: 20,
+              padding: 12,
+              background: allChecksPass ? "#f0fdf4" : "#fef2f2",
+              border: "1px solid #e2e8f0",
+              borderRadius: 12,
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>
+              Self-checks: {allChecksPass ? "passed" : "failed"}
+            </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {checks.map((check) => (
                 <div
@@ -760,7 +768,18 @@ export default function App() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ background: "#f1f5f9" }}>
-                  {["Stall", "Cow", "Diet", "Bin Weight (lbs)", "Bin + Fed Yesterday (lbs)", "Fed (lbs)", "Orts + Bin", "Orts", "Fed + Bin", "Fed"].map((h) => (
+                  {[
+                    "Stall",
+                    "Cow",
+                    "Diet",
+                    "Bin Weight (lbs)",
+                    "Bin + Fed Yesterday (lbs)",
+                    "Fed (lbs)",
+                    "Orts + Bin",
+                    "Orts",
+                    "Fed + Bin",
+                    "Fed",
+                  ].map((h) => (
                     <th key={h} style={{ border: "1px solid #cbd5e1", padding: 8 }}>{h}</th>
                   ))}
                 </tr>
@@ -782,22 +801,48 @@ export default function App() {
                   <tr key={row.stall}>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6, textAlign: "center" }}>{row.stall}</td>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
-                      <input style={{ ...inputStyle, background: "#fed7aa" }} value={row.cow} onChange={(e) => updateRow(index, "cow", e.target.value)} />
+                      <input
+                        style={{ ...inputStyle, background: "#fed7aa" }}
+                        value={row.cow}
+                        onChange={(e) => updateRow(index, "cow", e.target.value)}
+                      />
                     </td>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
-                      <input style={{ ...inputStyle, background: "#fed7aa" }} value={row.diet} onChange={(e) => updateRow(index, "diet", e.target.value)} />
+                      <input
+                        style={{ ...inputStyle, background: "#fed7aa" }}
+                        value={row.diet}
+                        onChange={(e) => updateRow(index, "diet", e.target.value)}
+                      />
                     </td>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
-                      <input style={{ ...inputStyle, background: "#dbeafe" }} type="number" step="any" value={row.binWeight} onChange={(e) => updateRow(index, "binWeight", e.target.value)} />
+                      <input
+                        style={{ ...inputStyle, background: "#dbeafe" }}
+                        type="number"
+                        step="any"
+                        value={row.binWeight}
+                        onChange={(e) => updateRow(index, "binWeight", e.target.value)}
+                      />
                     </td>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
-                      <input style={{ ...inputStyle, background: "#fed7aa" }} type="number" step="any" value={row.binFedYesterday} onChange={(e) => updateRow(index, "binFedYesterday", e.target.value)} />
+                      <input
+                        style={{ ...inputStyle, background: "#fed7aa" }}
+                        type="number"
+                        step="any"
+                        value={row.binFedYesterday}
+                        onChange={(e) => updateRow(index, "binFedYesterday", e.target.value)}
+                      />
                     </td>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
                       <input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.fedYesterday} />
                     </td>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
-                      <input style={{ ...inputStyle, background: "#fed7aa" }} type="number" step="any" value={row.ortsBinToday} onChange={(e) => updateRow(index, "ortsBinToday", e.target.value)} />
+                      <input
+                        style={{ ...inputStyle, background: "#fed7aa" }}
+                        type="number"
+                        step="any"
+                        value={row.ortsBinToday}
+                        onChange={(e) => updateRow(index, "ortsBinToday", e.target.value)}
+                      />
                     </td>
                     <td style={{ border: "1px solid #cbd5e1", padding: 6 }}>
                       <input style={{ ...inputStyle, background: "#fef08a" }} readOnly value={row.ortsToday} />
