@@ -465,6 +465,23 @@ export default function App() {
     };
   }, [rows]);
 
+  const averages = useMemo(() => {
+    const avg = (key) => {
+      const values = rows.map((r) => toNumber(r[key])).filter((v) => v !== null);
+      if (values.length === 0) return "";
+      const mean = values.reduce((a, b) => a + b, 0) / values.length;
+      return formatCalc(mean);
+    };
+    return {
+      binFedYesterday: avg("binFedYesterday"),
+      fedYesterday: avg("fedYesterday"),
+      ortsBinToday: avg("ortsBinToday"),
+      ortsToday: avg("ortsToday"),
+      fedBinToday: avg("fedBinToday"),
+      fedToday: avg("fedToday"),
+    };
+  }, [rows]);
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.sheetsByDate, JSON.stringify(sheetsByDate));
@@ -929,6 +946,15 @@ export default function App() {
                 ))}
               </tbody>
               <tfoot>
+                <tr style={{ background: "#f8fafc", fontWeight: 700 }}>
+                  <td style={{ border: "1px solid #cbd5e1", padding: 8 }} colSpan={4}>Averages</td>
+                  <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{averages.binFedYesterday}</td>
+                  <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{averages.fedYesterday}</td>
+                  <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{averages.ortsBinToday}</td>
+                  <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{averages.ortsToday}</td>
+                  <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{averages.fedBinToday}</td>
+                  <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{averages.fedToday}</td>
+                </tr>
                 <tr style={{ background: "#f1f5f9", fontWeight: 700 }}>
                   <td style={{ border: "1px solid #cbd5e1", padding: 8 }} colSpan={4}>Totals</td>
                   <td style={{ border: "1px solid #cbd5e1", padding: 8 }}>{totals.binFedYesterday}</td>
