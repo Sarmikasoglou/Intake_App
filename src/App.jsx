@@ -84,7 +84,6 @@ function calculateFedBinToday(binFedYesterday, ortsToday) {
   if (ortsToday < 8) return binFedYesterday + 5;
   if (ortsToday > 18) return binFedYesterday - 10;
   if (ortsToday > 13) return binFedYesterday - 5;
-  // 8 to 13 inclusive: keep same as yesterday
   return binFedYesterday;
 }
 
@@ -131,6 +130,8 @@ function applyDefaultSetup(rows, setupRows = INITIAL_SETUP_ROWS) {
         existingRow.binWeight !== undefined && existingRow.binWeight !== ""
           ? existingRow.binWeight
           : defaultRow.binWeight,
+      manualFedBinToday:
+        existingRow.manualFedBinToday !== undefined ? existingRow.manualFedBinToday : "",
     };
   });
 }
@@ -285,11 +286,11 @@ function runSelfChecks() {
   checks.push({ name: "32 default stalls", pass: defaultRows.length === 32 });
   checks.push({
     name: "stall 31 prefill",
-    pass: defaultRows[30].cow === "5864" && defaultRows[30].binWeight === "61",
+    pass: defaultRows[30].cow === "5846" && defaultRows[30].binWeight === "61",
   });
   checks.push({
     name: "stall 32 prefill",
-    pass: defaultRows[31].cow === "3085" && defaultRows[31].binWeight === "",
+    pass: defaultRows[31].cow === "5929" && defaultRows[31].binWeight === "",
   });
 
   const editableSetup = normalizeSetupRows(INITIAL_SETUP_ROWS);
@@ -514,6 +515,7 @@ export default function App() {
       ...sheet,
       rows: sheet.rows.map((row, i) => {
         if (i !== index) return row;
+
         if (key === "fedBinToday") {
           const nextRow = {
             ...row,
@@ -522,7 +524,12 @@ export default function App() {
           };
           return recalcRow(nextRow);
         }
-        return recalcRow({ ...row, [key]: value });
+
+        return recalcRow({
+          ...row,
+          [key]: value,
+          manualFedBinToday: row.manualFedBinToday || "",
+        });
       }),
     }));
   };
