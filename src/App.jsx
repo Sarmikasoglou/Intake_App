@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_ROW_COUNT = 32;
+const CURRENT_SETUP_VERSION = 2;
+
 const STORAGE_KEYS = {
   currentDate: "tieStall.currentDate",
   sheetsByDate: "tieStall.sheetsByDate",
   setupRows: "tieStall.setupRows",
+  setupVersion: "tieStall.setupVersion",
 };
 
 const INITIAL_SETUP_ROWS = [
@@ -84,6 +87,7 @@ function calculateFedBinToday(binFedYesterday, ortsToday) {
   if (ortsToday < 8) return binFedYesterday + 5;
   if (ortsToday > 18) return binFedYesterday - 10;
   if (ortsToday > 13) return binFedYesterday - 5;
+  // 8 to 13 inclusive: keep same as yesterday
   return binFedYesterday;
 }
 
@@ -130,8 +134,6 @@ function applyDefaultSetup(rows, setupRows = INITIAL_SETUP_ROWS) {
         existingRow.binWeight !== undefined && existingRow.binWeight !== ""
           ? existingRow.binWeight
           : defaultRow.binWeight,
-      manualFedBinToday:
-        existingRow.manualFedBinToday !== undefined ? existingRow.manualFedBinToday : "",
     };
   });
 }
@@ -387,8 +389,11 @@ export default function App() {
   const [showSetupEditor, setShowSetupEditor] = useState(false);
   const [setupRows, setSetupRows] = useState(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.setupRows);
-      if (saved) return normalizeSetupRows(JSON.parse(saved));
+      const savedVersion = localStorage.getItem(STORAGE_KEYS.setupVersion);
+      if (savedVersion === String(CURRENT_SETUP_VERSION)) {
+        const saved = localStorage.getItem(STORAGE_KEYS.setupRows);
+        if (saved) return normalizeSetupRows(JSON.parse(saved));
+      }
     } catch {
       // ignore and fall back
     }
@@ -406,7 +411,11 @@ export default function App() {
   const [sheetsByDate, setSheetsByDate] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.sheetsByDate);
-      const savedSetup = localStorage.getItem(STORAGE_KEYS.setupRows);
+      const savedVersion = localStorage.getItem(STORAGE_KEYS.setupVersion);
+      const savedSetup =
+        savedVersion === String(CURRENT_SETUP_VERSION)
+          ? localStorage.getItem(STORAGE_KEYS.setupRows)
+          : null;
       const currentSetupRows = savedSetup
         ? normalizeSetupRows(JSON.parse(savedSetup))
         : normalizeSetupRows(INITIAL_SETUP_ROWS);
@@ -488,6 +497,7 @@ export default function App() {
       localStorage.setItem(STORAGE_KEYS.sheetsByDate, JSON.stringify(sheetsByDate));
       localStorage.setItem(STORAGE_KEYS.currentDate, currentDate);
       localStorage.setItem(STORAGE_KEYS.setupRows, JSON.stringify(setupRows));
+      localStorage.setItem(STORAGE_KEYS.setupVersion, String(CURRENT_SETUP_VERSION));
     } catch {
       // ignore storage errors
     }
@@ -515,7 +525,6 @@ export default function App() {
       ...sheet,
       rows: sheet.rows.map((row, i) => {
         if (i !== index) return row;
-
         if (key === "fedBinToday") {
           const nextRow = {
             ...row,
@@ -524,12 +533,7 @@ export default function App() {
           };
           return recalcRow(nextRow);
         }
-
-        return recalcRow({
-          ...row,
-          [key]: value,
-          manualFedBinToday: row.manualFedBinToday || "",
-        });
+        return recalcRow({ ...row, [key]: value });
       }),
     }));
   };
