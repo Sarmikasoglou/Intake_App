@@ -87,7 +87,6 @@ function calculateFedBinToday(binFedYesterday, ortsToday) {
   if (ortsToday < 8) return binFedYesterday + 5;
   if (ortsToday > 18) return binFedYesterday - 10;
   if (ortsToday > 13) return binFedYesterday - 5;
-  // 8 to 13 inclusive: keep same as yesterday
   return binFedYesterday;
 }
 
@@ -126,14 +125,10 @@ function applyDefaultSetup(rows, setupRows = INITIAL_SETUP_ROWS) {
       ...defaultRow,
       ...existingRow,
       stall: defaultRow.stall,
-      cow:
-        existingRow.cow !== undefined && existingRow.cow !== ""
-          ? existingRow.cow
-          : defaultRow.cow,
-      binWeight:
-        existingRow.binWeight !== undefined && existingRow.binWeight !== ""
-          ? existingRow.binWeight
-          : defaultRow.binWeight,
+      cow: existingRow.cow !== undefined ? existingRow.cow : defaultRow.cow,
+      binWeight: existingRow.binWeight !== undefined ? existingRow.binWeight : defaultRow.binWeight,
+      manualFedBinToday:
+        existingRow.manualFedBinToday !== undefined ? existingRow.manualFedBinToday : "",
     };
   });
 }
@@ -326,10 +321,10 @@ function runSelfChecks() {
       sample.fedToday === "128.8",
   });
 
-  const mergedRows = normalizeRows([{ stall: "1", cow: "", binWeight: "" }], INITIAL_SETUP_ROWS);
+  const blankRows = normalizeRows([{ stall: "1", cow: "", binWeight: "" }], INITIAL_SETUP_ROWS);
   checks.push({
-    name: "default setup merge",
-    pass: mergedRows[0].cow === "5849" && mergedRows[0].binWeight === "63",
+    name: "blank edits persist",
+    pass: blankRows[0].cow === "" && blankRows[0].binWeight === "",
   });
 
   const overriddenRows = normalizeRows(
@@ -525,15 +520,20 @@ export default function App() {
       ...sheet,
       rows: sheet.rows.map((row, i) => {
         if (i !== index) return row;
+
         if (key === "fedBinToday") {
-          const nextRow = {
+          return recalcRow({
             ...row,
             manualFedBinToday: value,
             fedBinToday: value,
-          };
-          return recalcRow(nextRow);
+          });
         }
-        return recalcRow({ ...row, [key]: value });
+
+        return recalcRow({
+          ...row,
+          [key]: value,
+          manualFedBinToday: row.manualFedBinToday || "",
+        });
       }),
     }));
   };
