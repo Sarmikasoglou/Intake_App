@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Analytics } from "@vercel/analytics/react";
 
 const DEFAULT_ROW_COUNT = 32;
 const CURRENT_SETUP_VERSION = 2;
@@ -980,6 +981,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      <Analytics />
     </div>
   );
 }
